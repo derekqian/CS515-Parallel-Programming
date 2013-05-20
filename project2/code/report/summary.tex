@@ -1,0 +1,147 @@
+% http://www-lmmb.ncifcrf.gov/~toms/latexforbeginners.html
+% ftp://ftp.cfar.umd.edu/pub/louiqa/
+
+
+\documentclass[11pt,letterpaper,oneside]{article}
+\usepackage[top=1in,left=1in,right=1in,bottom=1in]{geometry}
+\usepackage{fancyvrb}
+\usepackage{colortbl}
+
+\title{Summary for Project 2}
+\author{Dejun Qian}
+
+\begin{document}
+\maketitle
+
+\section{Implementation}
+For prime\_omp.c, we add the OpenMP directives as following. The main idea here is to parallelize the three for loops, try to do the iterations of the for loops simultaneously as they don't depend on each other. The second piece of code is worth mention here as it is a nested loop. We must pay special attension here. The directive "collapse" can't be used here as the inside loop is surrounded by a if statement. Here we parallelize the inner loop and leave the outer one sequential.
+\begin{Verbatim}[frame=single]
+// parallelize when initializing the array
+#pragma omp parallel private(i) shared(array)
+{
+ #pragma omp for
+  for (i=2; i<=N; i++)
+     array[i] = 1;
+}
+...
+// parallelize when doing the actual work
+#pragma omp parallel private(i,j) shared(array)
+{
+  for (i=2; i<=limit; i++)
+    if (array[i]==1)
+#pragma omp for
+      for (j=i+i; j<=N; j+=i)
+        array[j] = 0;
+}
+...
+// parallelize when counting prime numbers
+#pragma omp parallel private(i) shared(array)
+{
+  #pragma omp for reduction(+:cnt)
+  for (i=2; i<=N; i++)
+    if (array[i]==1)
+      cnt++;
+}
+\end{Verbatim}
+
+For quick sort code, we use OpenMP directives to parallelize the inialization and the the quicksort procedure. The initialization part is similar to prime part, which is composed of for loops whose iterations are mutually independent. These iterations can execute at the same time and gain performance benefit. As quicksort is a recursive function instead of a loop, we use the directive "task" to parallelize the execution. The modified the code is shown bellow.
+\begin{Verbatim}[frame=single]
+#pragma omp parallel private(i,j) shared(array,N)
+{
+#pragma omp for
+  for (i=0; i<N; i++)
+    array[i] = i+1;
+}
+...
+#pragma omp parallel private(i,j) shared(array,N)
+{
+#pragma omp for
+  for (i=0; i<N; i++) {
+    j = (rand()*1./RAND_MAX)*(N-1);
+    swap(i, j);
+  }
+}
+...
+#pragma omp parallel
+{
+#pragma omp single
+  quicksort(0, N-1);
+}
+...
+#pragma omp task firstprivate(low,middle)
+  quicksort(low, middle-1);
+#pragma omp task firstprivate(middle,high)
+  quicksort(middle+1, high);
+#pragma omp taskwait
+\end{Verbatim}
+
+
+\section{Evaluation Result}
+We evaluate the prime code with 8 input sizes: 10, 100, 1000, 10000, 100000, 1000000, 10000000 and 100000000. When testing the code modified with OpenMP, we set thread number to 8 different value: 1, 2, 4, 8, 16, 32, 64 and 128. Each size is combined with every thread number size when doing the test. Every combination is executed for 10 times, the shortest time is recorded. The result is shown bellow. The row marked with "Sequential" is the result for prime\_seq.c and the rows marked with "Thread\#1 - Thread\#128" are the result for prime\_omp.c. Each column gives the results for each input size.
+
+From the table, we can see that the OpenMP version with 1 thread get almost the same result as the sequential version. This is not supprising us because they all execute the task by one thread. The speed doubles when using two threads to run the task. Same thing happens when continue doubling the thread number. The performance gain stops after the thread number reaches 16. As we can see from the table, time increases when thread number goes from 16 to 32, from 32 to 64 and from 64  to 128. Don't know why it happens this way. Besides thread number, input size also has impact on running time. From the table, we can see that time increase as size increase. Especially, for sequential version and the OpenMP version when thread number is 1, 2 and 4, time increases linearly as size goes up. This is not difficult to understand as the element in the array is indepent with each other when the code runs.
+
+% \input{prime_seq.tex}
+\begin{table}[th]
+\caption{Result for Prime}
+\centering
+\begin{tabular}{l||c|c|c|c|c|c|c|c}
+\hline
+ & \multicolumn{8}{c}{Array Size}\\
+\cline{2-9}
+ & 10 & 100 & 1000 & 10000 & 100000 & 1000000 & 10000000 & 100000000\\
+\hline\hline
+Sequential & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.1 & 2.3 & 23.7 \\
+\hline
+Thread\#1  & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.2 & 2.2 & 23.1 \\
+Thread\#2  & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.1 & 1.1 & 11.7 \\
+Thread\#4  & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.6 & 6.0 \\
+Thread\#8  & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.4 & 3.5 \\
+Thread\#16 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.1 & 0.4 & 2.5 \\
+Thread\#32 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.1 & 0.5 & 2.7 \\
+Thread\#64 & 0.0 & 0.0 & 0.0 & 0.0 & 0.1 & 0.3 & 1.0 & 4.1 \\
+Thread\#128 & 0.0 & 0.0 & 0.1 & 0.1 & 0.3 & 0.7 & 2.1 & 7.0 \\
+\hline
+\end{tabular}
+\label{table:prime}
+\end{table}
+
+Similarly, we evaluate quick sort code with 7 input sizes: 10, 100, 1000, 10000, 100000, 1000000 and 10000000. Same as the evaluation for prime code, we also consider thread number: 1, 2, 4, 8, 16, 32, 64 and 128. Different is that we also compared it with the code from project 1 under the same testing environment. The results are listed in the following table. Each value in the table is the best one chosen from 10 runs like previous experiment. Again, the row marked with "Sequential" is the result for the requential version. The rows marked with "Thread\#1 - Thread\#128" are a little different because we also put the result of the code from project 1 here. As shown in the table, "Thread\#1" is associated with 2 rows, the first row is for the OpenMP version and the second is for the queue version which is from project 1. The same for "Thread\#2 - Thread\#128". The result for each input size is recorded in corresponding column.
+
+From the table, we can see that the sequential version, the OpenMP version with only one thread and the queue version with one thread have almost the same result. Threse three test all run the same input size with only one thread. And the execution time is increased as the size goes up. However, different from the result for prime code that the time result doesn't change perfectly linearly with the input size. This is because the input array is randomly generated and have randomlized execution time, and the prime problem will have the same best time, worst time and average time for the same input size. However, they are approximately linear. Another observation from the data is that the execution time decrease as the thread number increases for both OpenMP version code and queue version code. This is not difficult to understand as more threads can work on the same time. However, when doubling the thread number, we don't get the performance doubled, though it increased. This is because the time is for the whole program and only part of the program is parallilized. When doubling the thread number, only part of the code executes with a doubled performance, as a whole, the program will not finish in half time. We can also see from the table that, the performance will not always increase when thread number increase. For example, when thread number is 16, the execution time for OpenMP is 10.6, while the time is 11.0 for thread numver 32. Same thing happen for queue version. This is also because the parallelized code only constitude part of the whole program.
+
+\begin{table}[th]
+\caption{Result for Quick Sort}
+\centering
+\begin{tabular}{l||c|c|c|c|c|c|c}
+\hline
+ & \multicolumn{7}{c}{Array Size}\\
+\cline{2-8}
+ & 10 & 100 & 1000 & 10000 & 100000 & 1000000 & 10000000\\
+\hline\hline
+Sequential & 0.0 & 0.0 & 0.0 & 0.0 & 0.2 & 3.0 & 44.0 \\
+\hline
+Thread\#1  & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.3\\0.2\end{tabular} & \begin{tabular}{c}3.8\\3.6\end{tabular} & \begin{tabular}{c}47.9\\46.6\end{tabular} \\
+Thread\#2  & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.2\\0.2\end{tabular} & \begin{tabular}{c}2.2\\2.3\end{tabular} & \begin{tabular}{c}29.5\\30.0\end{tabular} \\
+Thread\#4  & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.1\\0.1\end{tabular} & \begin{tabular}{c}1.6\\1.7\end{tabular} & \begin{tabular}{c}21.0\\19.5\end{tabular} \\
+Thread\#8  & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.1\\0.1\end{tabular} & \begin{tabular}{c}1.4\\1.3\end{tabular} & \begin{tabular}{c}13.7\\14.5\end{tabular} \\
+Thread\#16 & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.1\\0.1\end{tabular} & \begin{tabular}{c}1.0\\1.2\end{tabular} & \begin{tabular}{c}10.6\\13.2\end{tabular} \\
+Thread\#32 & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.1\\0.1\end{tabular} & \begin{tabular}{c}1.0\\1.2\end{tabular} & \begin{tabular}{c}11.0\\14.1\end{tabular} \\
+Thread\#64 & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.1\\0.1\end{tabular} & \begin{tabular}{c}1.5\\1.3\end{tabular} & \begin{tabular}{c}15.3\\14.7\end{tabular} \\
+Thread\#128 & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.0\\0.0\end{tabular} & \begin{tabular}{c}0.2\\0.1\end{tabular} & \begin{tabular}{c}1.7\\1.2\end{tabular} & \begin{tabular}{c}15.8\\13.8\end{tabular} \\
+\hline
+\end{tabular}
+\label{table:qsort}
+\end{table}
+
+
+%\begin{equation}
+%\sqrt{\pi}
+%\end{equation}
+
+\section{Lessons Learned}
+I would say I was shocked by the performance gain obtained by inserting some pragma directives only. In project 1, we write a lot of code to achive this. This is the biggest lesson I have learned through this project.
+
+The second lesson I learned here is my concrete understanding of OpenMP directives. Get to know what really happened behind is very important. For example, when counting the prime number, I didn't use reducton clause during my first try, and get different result for the same size among each run. Another example is about the for clause. I tried to parallelize the bubble sort code and get the wrong result. At last, I realized that in bubble sort, the iterations depend on the previous result, and can't be parallelized directly.
+
+\end{document}
